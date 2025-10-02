@@ -101,7 +101,3 @@ Esta aplicación permite reconocer:
 
 Desarrollado con **Streamlit + TensorFlow + Numpy** ✨
 """)
-
-
-
-
