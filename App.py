@@ -1,13 +1,14 @@
+import os
 import tensorflow as tf
-from PIL import Image, ImageOps
 import numpy as np
-import matplotlib.pyplot as plt
+import cv2
+from PIL import Image, ImageOps
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 
-# ------------------------------
-# Función para predecir dígitos
-# ------------------------------
+# =========================
+#  FUNCIÓN: Predecir número
+# =========================
 def predictDigit(image):
     model = tf.keras.models.load_model("model/handwritten.h5")
     image = ImageOps.grayscale(image)
@@ -19,82 +20,94 @@ def predictDigit(image):
     result = np.argmax(pred[0])
     return result
 
-# ------------------------------
-# Función para detectar expresiones con reglas simples
-# ------------------------------
-def detectar_expresion(img):
-    img_gray = ImageOps.grayscale(img).resize((50,50))
+# ==============================
+#  FUNCIÓN: Detectar forma básica
+# ==============================
+def detectar_forma(img):
+    img_gray = ImageOps.grayscale(img).resize((200,200))
     arr = np.array(img_gray)
+    _, thresh = cv2.threshold(arr, 127, 255, cv2.THRESH_BINARY_INV)
 
-    # Dividir en parte superior e inferior
-    arriba = arr[:25, :]
-    abajo = arr[25:, :]
+    # Encontrar contornos
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if len(contours) == 0:
+        return "Nada detectado"
 
-    intensidad_arriba = np.sum(arriba < 128)  # pixeles oscuros
-    intensidad_abajo = np.sum(abajo < 128)
+    c = max(contours, key=cv2.contourArea)
+    approx = cv2.approxPolyDP(c, 0.04*cv2.arcLength(c, True), True)
 
-    # Reglas básicas
-    if intensidad_abajo > intensidad_arriba * 1.2:
-        return "😊 Feliz"
-    elif intensidad_arriba > intensidad_abajo * 1.2:
-        return "😢 Triste"
+    # Clasificación
+    lados = len(approx)
+    if lados == 3:
+        return "🔺 Triángulo"
+    elif lados == 4:
+        return "◼️ Cuadrado"
+    elif lados > 5:
+        return "⭕ Círculo"
     else:
-        return "😐 Serio"
+        return "Figura desconocida"
 
-# ------------------------------
-# Configuración de la app
-# ------------------------------
-st.set_page_config(page_title='Reconocimiento de Dígitos y Expresiones', layout='wide')
-st.title('🖌️ Reconocimiento de Dígitos escritos a mano y Expresiones')
-st.subheader("Dibuja un dígito o una carita (feliz, triste, seria) en el panel y presiona un botón")
+# =========================
+# CONFIGURACIÓN DE LA APP
+# =========================
+st.set_page_config(page_title='🖌️ Detección de Números y Figuras', layout='wide')
 
-# Parámetros del canvas
-drawing_mode = "freedraw"
-stroke_width = st.slider('Selecciona el ancho de línea', 1, 30, 15)
-stroke_color = '#FFFFFF'
-bg_color = '#000000'
+st.markdown("<h1 style='text-align: center; color: #4CAF50;'>🖌️ Detección de Números y Figuras Geométricas</h1>", unsafe_allow_html=True)
+st.markdown("<h4 style='text-align: center;'>Dibuja un número (0–9) o una figura geométrica (círculo, cuadrado, triángulo)</h4>", unsafe_allow_html=True)
 
-# Canvas
+# =========================
+# CANVAS DE DIBUJO
+# =========================
+st.sidebar.title("🎨 Opciones de Dibujo")
+stroke_width = st.sidebar.slider('✏️ Ancho de línea', 1, 30, 15)
+stroke_color = st.sidebar.color_picker("🎨 Color del lápiz", "#FFFFFF")
+bg_color = st.sidebar.color_picker("🌌 Color de fondo", "#000000")
+
 canvas_result = st_canvas(
     fill_color="rgba(255, 165, 0, 0.3)",
     stroke_width=stroke_width,
     stroke_color=stroke_color,
     background_color=bg_color,
-    height=200,
-    width=200,
+    height=250,
+    width=250,
     key="canvas",
 )
 
-# ------------------------------
-# Botón para predecir dígito
-# ------------------------------
-if st.button('Predecir Dígito'):
-    if canvas_result.image_data is not None:
-        input_numpy_array = np.array(canvas_result.image_data)
-        img = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
-        res = predictDigit(img)
-        st.header('El dígito es: ' + str(res))
-    else:
-        st.warning('Por favor dibuja en el canvas el dígito.')
+# =========================
+# BOTONES DE ACCIÓN
+# =========================
+col1, col2 = st.columns(2)
 
-# ------------------------------
-# Botón para detectar expresión
-# ------------------------------
-if st.button('Detectar Expresión'):
-    if canvas_result.image_data is not None:
-        input_numpy_array = np.array(canvas_result.image_data)
-        img = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
-        expresion = detectar_expresion(img)
-        st.header(f"La expresión parece: {expresion}")
-    else:
-        st.warning('Por favor dibuja una carita en el canvas.')
+with col1:
+    if st.button('🔢 Predecir Número'):
+        if canvas_result.image_data is not None:
+            input_numpy_array = np.array(canvas_result.image_data)
+            img = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
+            res = predictDigit(img)
+            st.success('El número detectado es: ' + str(res))
+        else:
+            st.warning('Por favor dibuja un número en el canvas.')
 
-# ------------------------------
-# Sidebar
-# ------------------------------
-st.sidebar.title("Acerca de:")
-st.sidebar.text("Esta app reconoce:")
-st.sidebar.text(" - Dígitos escritos a mano (0-9)")
-st.sidebar.text(" - Caritas simples (feliz, triste, seria)")
-st.sidebar.text("Demostración con reglas + IA básica.")
+with col2:
+    if st.button("📐 Detectar Forma"):
+        if canvas_result.image_data is not None:
+            input_numpy_array = np.array(canvas_result.image_data)
+            img = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
+            resultado = detectar_forma(img)
+            st.success(f"La figura detectada es: {resultado}")
+        else:
+            st.warning("Por favor dibuja una figura en el canvas.")
+
+# =========================
+# SIDEBAR - INFO EXTRA
+# =========================
+st.sidebar.markdown("---")
+st.sidebar.subheader("ℹ️ Acerca de la app")
+st.sidebar.info(
+    "Esta aplicación permite reconocer **números escritos a mano (0–9)** "
+    "usando un modelo de IA entrenado con MNIST, "
+    "y detectar **figuras geométricas básicas** con visión por computadora."
+)
+
+
 
