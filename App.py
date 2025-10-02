@@ -1,14 +1,12 @@
-import os
 import tensorflow as tf
-import numpy as np
-import cv2
 from PIL import Image, ImageOps
+import numpy as np
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 
-# =========================
-#  FUNCIÓN: Predecir número
-# =========================
+# -----------------------------
+# Función para predecir números
+# -----------------------------
 def predictDigit(image):
     model = tf.keras.models.load_model("model/handwritten.h5")
     image = ImageOps.grayscale(image)
@@ -20,51 +18,50 @@ def predictDigit(image):
     result = np.argmax(pred[0])
     return result
 
-# ==============================
-#  FUNCIÓN: Detectar forma básica
-# ==============================
-def detectar_forma(img):
+# -----------------------------
+# Función para detectar formas
+# -----------------------------
+def detectar_forma_simple(img):
     img_gray = ImageOps.grayscale(img).resize((200,200))
     arr = np.array(img_gray)
-    _, thresh = cv2.threshold(arr, 127, 255, cv2.THRESH_BINARY_INV)
 
-    # Encontrar contornos
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if len(contours) == 0:
-        return "Nada detectado"
+    # Binarizar (0 o 1)
+    arr = (arr < 128).astype(np.uint8)
 
-    c = max(contours, key=cv2.contourArea)
-    approx = cv2.approxPolyDP(c, 0.04*cv2.arcLength(c, True), True)
+    # Contar pixeles negros
+    total_black = np.sum(arr)
 
-    # Clasificación
-    lados = len(approx)
-    if lados == 3:
-        return "🔺 Triángulo"
-    elif lados == 4:
-        return "◼️ Cuadrado"
-    elif lados > 5:
+    if total_black < 100:  # nada dibujado
+        return "❌ No se detecta forma"
+
+    # Heurísticas simples
+    rows_black = np.sum(arr, axis=1)
+    cols_black = np.sum(arr, axis=0)
+
+    if abs(np.argmax(rows_black) - 100) < 20 and abs(np.argmax(cols_black) - 100) < 20:
         return "⭕ Círculo"
+    elif np.max(rows_black) > 150 and np.max(cols_black) > 150:
+        return "◼️ Cuadrado"
+    elif np.argmax(rows_black) < 80:
+        return "🔺 Triángulo"
     else:
-        return "Figura desconocida"
+        return "📐 Figura desconocida"
 
-# =========================
-# CONFIGURACIÓN DE LA APP
-# =========================
-st.set_page_config(page_title='🖌️ Detección de Números y Figuras', layout='wide')
+# -----------------------------
+# Interfaz en Streamlit
+# -----------------------------
+st.set_page_config(page_title='Reconocimiento de Números y Figuras', layout='wide')
 
-st.markdown("<h1 style='text-align: center; color: #4CAF50;'>🖌️ Detección de Números y Figuras Geométricas</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='text-align: center;'>Dibuja un número (0–9) o una figura geométrica (círculo, cuadrado, triángulo)</h4>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; color: cyan;'>✍️ Reconocimiento de Números y Figuras Geométricas</h1>", unsafe_allow_html=True)
+st.write("Dibuja un número o una forma geométrica en el panel y presiona **Detectar**")
 
-# =========================
-# CANVAS DE DIBUJO
-# =========================
-st.sidebar.title("🎨 Opciones de Dibujo")
-stroke_width = st.sidebar.slider('✏️ Ancho de línea', 1, 30, 15)
-stroke_color = st.sidebar.color_picker("🎨 Color del lápiz", "#FFFFFF")
-bg_color = st.sidebar.color_picker("🌌 Color de fondo", "#000000")
+# Panel de dibujo
+stroke_width = st.slider('✏️ Selecciona el ancho de línea', 1, 30, 15)
+stroke_color = '#FFFFFF'  # blanco
+bg_color = '#000000'      # negro
 
 canvas_result = st_canvas(
-    fill_color="rgba(255, 165, 0, 0.3)",
+    fill_color="rgba(255, 165, 0, 0.3)",  
     stroke_width=stroke_width,
     stroke_color=stroke_color,
     background_color=bg_color,
@@ -73,41 +70,38 @@ canvas_result = st_canvas(
     key="canvas",
 )
 
-# =========================
-# BOTONES DE ACCIÓN
-# =========================
-col1, col2 = st.columns(2)
+# Botón de predicción
+if st.button('🔍 Detectar'):
+    if canvas_result.image_data is not None:
+        input_numpy_array = np.array(canvas_result.image_data)
+        input_image = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
+        input_image = input_image.convert("RGB")
 
-with col1:
-    if st.button('🔢 Predecir Número'):
-        if canvas_result.image_data is not None:
-            input_numpy_array = np.array(canvas_result.image_data)
-            img = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
-            res = predictDigit(img)
-            st.success('El número detectado es: ' + str(res))
-        else:
-            st.warning('Por favor dibuja un número en el canvas.')
+        # Detectar número
+        try:
+            num = predictDigit(input_image)
+            st.success(f"🔢 Número detectado: **{num}**")
+        except:
+            st.warning("⚠️ No se pudo detectar un número (quizás dibujaste una figura).")
 
-with col2:
-    if st.button("📐 Detectar Forma"):
-        if canvas_result.image_data is not None:
-            input_numpy_array = np.array(canvas_result.image_data)
-            img = Image.fromarray(input_numpy_array.astype('uint8'),'RGBA')
-            resultado = detectar_forma(img)
-            st.success(f"La figura detectada es: {resultado}")
-        else:
-            st.warning("Por favor dibuja una figura en el canvas.")
+        # Detectar figura
+        forma = detectar_forma_simple(input_image)
+        st.info(f"🟦 Forma detectada: **{forma}**")
 
-# =========================
-# SIDEBAR - INFO EXTRA
-# =========================
-st.sidebar.markdown("---")
-st.sidebar.subheader("ℹ️ Acerca de la app")
-st.sidebar.info(
-    "Esta aplicación permite reconocer **números escritos a mano (0–9)** "
-    "usando un modelo de IA entrenado con MNIST, "
-    "y detectar **figuras geométricas básicas** con visión por computadora."
-)
+    else:
+        st.error("Por favor dibuja algo en el canvas.")
+
+# Sidebar
+st.sidebar.title("ℹ️ Acerca de:")
+st.sidebar.markdown("""
+Esta aplicación permite reconocer:
+
+- 🔢 Dígitos escritos a mano (0-9)  
+- ⭕ Formas geométricas básicas (círculo, cuadrado, triángulo)  
+
+Desarrollado con **Streamlit + TensorFlow + Numpy** ✨
+""")
+
 
 
 
